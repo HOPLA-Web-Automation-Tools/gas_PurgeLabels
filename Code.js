@@ -2,40 +2,43 @@ var scriptName = "Purge Labels"
 var userProperties = PropertiesService.getUserProperties();
 var LABELS_TO_PURGE = userProperties.getProperty("LABELS_TO_PURGE") || '',    
     purge_checkFrequency_HOUR = userProperties.getProperty("purge_checkFrequency_HOUR") || 1,
-    status = userProperties.getProperty("status") || "false";
+    status = userProperties.getProperty("status") || "disabled";
 
 user_email = Session.getEffectiveUser().getEmail();
-
+function test(){
+  Logger.log(1)
+}
 function getSettings(){
   Logger.log(userProperties.getProperty("LABELS_TO_PURGE"));
   Logger.log(userProperties.getProperty("purge_checkFrequency_HOUR"));
   Logger.log(userProperties.getProperty("status"));
 }
+
 function doGet(e){
   if (e.parameter.setup){ //SETUP    
     deleteAllTriggers()
-    if (status == "true"){
+    if (status == "enabled"){
       ScriptApp.newTrigger("purgeGmail").timeBased().atHour(purge_checkFrequency_HOUR).everyDays(1).create();
     }
     
     var content = "<p>"+scriptName+" has been installed on your email " + user_email + ". "
     + "It is currently set to your specified labels in settings every 1 AM.</p>"
-    + '<p>You can change these settings by clicking the WAT Suite extension icon or WAT Settings on gmail.</p>';        
+    + '<p>You can change these settings by clicking the HOPLA Tools extension icon or HOPLA Tools Settings on gmail.</p>';        
     
     return HtmlService.createHtmlOutput(content);
   }
   else if (e.parameter.setpurgevariables){ //SET VARIABLES
     var settings = JSON.parse(e.parameter.settings);
     userProperties.setProperty("LABELS_TO_PURGE", JSON.stringify(settings.labels));    
-    userProperties.setProperty("purge_checkFrequency_HOUR", settings.purge_checkFrequency_HOUR || 1);
-    userProperties.setProperty("status", settings.status);
+    userProperties.setProperty("purge_checkFrequency_HOUR", settings.autopurge_frequency || 1);
+    userProperties.setProperty("status", settings["switch-main-autopurge"]);
     
     LABELS_TO_PURGE = userProperties.getProperty("LABELS_TO_PURGE"),
     purge_checkFrequency_HOUR = userProperties.getProperty("purge_checkFrequency_HOUR");
-    status = userProperties.getProperty("status") || "false";
+    status = userProperties.getProperty("status") || "disabled";
     
     deleteAllTriggers()
-    if (status == "true") ScriptApp.newTrigger("purgeGmail").timeBased().atHour(purge_checkFrequency_HOUR).everyDays(1).create();
+    if (status == "enabled") ScriptApp.newTrigger("purgeGmail").timeBased().atHour(purge_checkFrequency_HOUR).everyDays(1).create();
     
     
     return ContentService.createTextOutput("Purge settings has been saved.");    
@@ -46,14 +49,14 @@ function doGet(e){
     return ContentService.createTextOutput(msg);
   }
   else if (e.parameter.purge_enable){ //ENABLE
-    userProperties.setProperty("status","true");
+    userProperties.setProperty("status","enabled");
     deleteAllTriggers();
     ScriptApp.newTrigger("purgeGmail").timeBased().atHour(purge_checkFrequency_HOUR).everyDays(1).create();
 
     return ContentService.createTextOutput("Triggers has been enabled.");
   }
   else if (e.parameter.purge_disable){ //DISABLE
-    userProperties.setProperty("status","false");
+    userProperties.setProperty("status","enabled");
     deleteAllTriggers()
     return ContentService.createTextOutput("Triggers has been disabled.");
   }
@@ -61,9 +64,9 @@ function doGet(e){
     var triggers = ScriptApp.getProjectTriggers();
     var status;
     if (triggers.length != 1){
-      status = 'false';
+      status = 'disabled';
     }else{
-      status = 'true';
+      status = 'enabled';
     }
     resjson = {
       'labels': JSON.parse(userProperties.getProperty("LABELS_TO_PURGE")) || '',
@@ -84,13 +87,13 @@ function doGet(e){
     heading.name = name;
     
     deleteAllTriggers()
-    if (status == 'true'){
+    if (status == 'enabled'){
       ScriptApp.newTrigger("purgeGmail").timeBased().atHour(purge_checkFrequency_HOUR).everyDays(1).create();    
     }
     
      var content = "<p>"+scriptName+" has been installed on your email " + user_email + ". "
      + "It is currently set to your specified labels in settings every 1 AM.</p>"
-     + '<p>You can change these settings by clicking the WAT Suite extension icon or WAT Settings on gmail.</p>';        
+     + '<p>You can change these settings by clicking the HOPLA Tools extension icon or HOPLA Tools Settings on gmail.</p>';        
     
     
     
@@ -118,39 +121,31 @@ function deleteAllTriggers(){
 
 
 
-function purgeGmail() {
+function purgeGmail() {  
   var deletedThreads = 0;
   var processedLabels = 0;
-  labels = userProperties.getProperty("LABELS_TO_PURGE");
-  if (labels){
-    labels = JSON.parse(labels);    
-    for (key in labels){
-      Logger.log("key: " + key + "\n After: " + labels[key].after + "\n status: " + labels[key].status)
-      if (labels[key].status){
-        Logger.log("Purging [" + key + "]");
-        deleted = labelPurge(key,labels[key].after);
-        if (deleted) deletedThreads += deleted        
-        processedLabels += 1;
+  
+  try{
+    labels = userProperties.getProperty("LABELS_TO_PURGE");
+    if (labels){
+      labels = JSON.parse(labels);    
+      for (key in labels){
+          Logger.log("Purging [" + key + "]");
+          deleted = labelPurge(key,labels[key]);
+          if (deleted) deletedThreads += deleted        
+          processedLabels += 1;
+        
       }
+      
+      return "Processed "+processedLabels+" label(s). Deleted "+deletedThreads+" thread(s).";
     }
-
-    return "Processed "+processedLabels+" label(s). Deleted "+deletedThreads+" thread(s).";
+  }catch (e){
+    Logger.log(e);
   }
   
   
   
-  // if (GMAIL_LABEL.match(',')){ //MANY LABELS
-  //   var arrr = GMAIL_LABEL.split(',');
-  //   for (i=0;i<arrr.length;i++){
-  //     Logger.log("Purging " + arrr[i]);
-  //     labelPurge(arrr[i]);
-  //   }
-  // }else{
-  //   if (GMAIL_LABEL != ""){
-  //     Logger.log("Purging " + GMAIL_LABEL);
-  //     labelPurge(GMAIL_LABEL);
-  //   }
-  // }
+  
   
   
 }
