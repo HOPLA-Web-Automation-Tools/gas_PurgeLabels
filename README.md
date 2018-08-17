@@ -1,3 +1,3 @@
-# WAT - App Script - Purge Labels #
+# HT - App Script - Purge Labels #
 
-Deletes emails with a specified label on shedule.
+Deletes emails under the specified labels on shedule.
