@@ -3,8 +3,14 @@ var userProperties = PropertiesService.getUserProperties();
 var LABELS_TO_PURGE = userProperties.getProperty("LABELS_TO_PURGE") || '';
 var purge_checkFrequency_HOUR = userProperties.getProperty("purge_checkFrequency_HOUR") || 1;
 var status = userProperties.getProperty("status") || "disabled";
-
 var user_email = Session.getEffectiveUser().getEmail();
+
+global.doGet = doGet;
+global.test = test;
+global.getSettings = getSettings;
+global.deleteAllTriggers = deleteAllTriggers;
+global.purgeGmail = purgeGmail;
+global.labelPurge = labelPurge;
 
 function test() {
   Logger.log(1);
@@ -15,7 +21,7 @@ function getSettings() {
   Logger.log(userProperties.getProperty("purge_checkFrequency_HOUR"));
   Logger.log(userProperties.getProperty("status"));
 }
-global.doGet = doGet;
+
 function doGet(e) {
   if (e.parameter.setup) { // SETUP
     deleteAllTriggers();
