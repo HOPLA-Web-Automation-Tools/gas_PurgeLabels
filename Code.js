@@ -1,6 +1,7 @@
 var scriptName = "Purge Labels";
 var userProperties = PropertiesService.getUserProperties();
-var LABELS_TO_PURGE = userProperties.getProperty("LABELS_TO_PURGE") || '';
+var labels_to_purge = userProperties.getProperty("labels_to_purge") || '';
+var labels_never_purge = userProperties.getProperty("labels_never_purge") || '';
 var purge_checkFrequency_HOUR = userProperties.getProperty("purge_checkFrequency_HOUR") || 1;
 var status = userProperties.getProperty("status") || "disabled";
 var user_email = Session.getEffectiveUser().getEmail();
@@ -17,7 +18,7 @@ function test() {
 }
 
 function getSettings() {
-  Logger.log(userProperties.getProperty("LABELS_TO_PURGE"));
+  Logger.log(userProperties.getProperty("labels_to_purge"));
   Logger.log(userProperties.getProperty("purge_checkFrequency_HOUR"));
   Logger.log(userProperties.getProperty("status"));
 }
@@ -34,13 +35,15 @@ function doGet(e) {
       + '<p>You can change these settings by clicking the HOPLA Tools extension icon or HOPLA Tools Settings on gmail.</p>';
 
     return HtmlService.createHtmlOutput(content);
-  } else if (e.parameter.setpurgevariables) { // SET VARIABLES
-    var settings = JSON.parse(e.parameter.settings);
-    userProperties.setProperty("LABELS_TO_PURGE", JSON.stringify(settings.labels));
-    userProperties.setProperty("purge_checkFrequency_HOUR", settings.autopurge_frequency || 1);
-    userProperties.setProperty("status", settings["switch-main-autopurge"]);
+  } else if (e.parameter.savesettings) { // SET VARIABLES
+    var settings = JSON.parse(e.parameter.savesettings);
+    userProperties.setProperty("labels_to_purge", JSON.stringify(settings.labels_to_purge));
+    userProperties.setProperty("labels_never_purge", JSON.stringify(settings.labels_never_purge));
+    userProperties.setProperty("purge_checkFrequency_HOUR", settings.purge_checkFrequency_HOUR || 1);
+    userProperties.setProperty("status", settings.status);
 
-    LABELS_TO_PURGE = userProperties.getProperty("LABELS_TO_PURGE");
+    labels_to_purge = userProperties.getProperty("labels_to_purge");
+    labels_never_purge = userProperties.getProperty("labels_never_purge");
     purge_checkFrequency_HOUR = userProperties.getProperty("purge_checkFrequency_HOUR");
     status = userProperties.getProperty("status") || "disabled";
 
@@ -64,16 +67,16 @@ function doGet(e) {
     return ContentService.createTextOutput("Triggers has been disabled.");
   } else if (e.parameter.purge_getVariables) { // GET VARIABLES
     var triggers = ScriptApp.getProjectTriggers();
-    var status;
-    if (triggers.length !== 1) {
-      status = 'disabled';
-    } else {
-      status = 'enabled';
-    }
+    var status = triggers.length > 0 ? 'enabled' : 'disabled';
+    var purge_checkFrequency_HOUR = userProperties.getProperty("purge_checkFrequency_HOUR") || 1;
+    purge_checkFrequency_HOUR = parseInt(purge_checkFrequency_HOUR, 10);
+    var labels_to_purge = _JSONPARSE(userProperties.getProperty("labels_to_purge"));
+    var labels_never_purge = _JSONPARSE(userProperties.getProperty("labels_never_purge"));
     var resjson = {
-      'labels': JSON.parse(userProperties.getProperty("LABELS_TO_PURGE")) || '',
-      'purge_checkFrequency_HOUR': userProperties.getProperty("purge_checkFrequency_HOUR") || 1,
-      'status': status
+      labels_to_purge,
+      labels_never_purge,
+      purge_checkFrequency_HOUR,
+      status
     };
     return ContentService.createTextOutput(JSON.stringify(resjson));
   } else { // NO PARAMETERS
@@ -105,6 +108,16 @@ function doGet(e) {
   }
 }
 
+function _JSONPARSE(o) { // RETURNS EMPTY TXT WHEN NOT JSON
+  let ret = '';
+  try {
+    ret = JSON.parse(o);
+  } catch (e) {
+    ret = '';
+  }
+  return ret;
+}
+
 function deleteAllTriggers() {
   // DELETE ALL TRIGGERS
   var triggers = ScriptApp.getProjectTriggers();
@@ -119,7 +132,7 @@ function purgeGmail() {
   var processedLabels = 0;
 
   try {
-    var labels = userProperties.getProperty("LABELS_TO_PURGE");
+    var labels = userProperties.getProperty("labels_to_purge");
     if (labels) {
       labels = JSON.parse(labels);
       for (var key in labels) {
