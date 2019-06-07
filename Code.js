@@ -1,6 +1,7 @@
 var scriptName = "Purge Labels";
 var userProperties = PropertiesService.getUserProperties();
-var LABELS_TO_PURGE = userProperties.getProperty("LABELS_TO_PURGE") || '';
+var labels_to_purge = userProperties.getProperty("labels_to_purge") || '';
+var labels_never_purge = userProperties.getProperty("labels_never_purge") || '';
 var purge_checkFrequency_HOUR = userProperties.getProperty("purge_checkFrequency_HOUR") || 1;
 var status = userProperties.getProperty("status") || "disabled";
 var user_email = Session.getEffectiveUser().getEmail();
@@ -12,12 +13,8 @@ global.deleteAllTriggers = deleteAllTriggers;
 global.purgeGmail = purgeGmail;
 global.labelPurge = labelPurge;
 
-function test() {
-  Logger.log(1);
-}
-
 function getSettings() {
-  Logger.log(userProperties.getProperty("LABELS_TO_PURGE"));
+  Logger.log(userProperties.getProperty("labels_to_purge"));
   Logger.log(userProperties.getProperty("purge_checkFrequency_HOUR"));
   Logger.log(userProperties.getProperty("status"));
 }
@@ -34,13 +31,15 @@ function doGet(e) {
       + '<p>You can change these settings by clicking the HOPLA Tools extension icon or HOPLA Tools Settings on gmail.</p>';
 
     return HtmlService.createHtmlOutput(content);
-  } else if (e.parameter.setpurgevariables) { // SET VARIABLES
-    var settings = JSON.parse(e.parameter.settings);
-    userProperties.setProperty("LABELS_TO_PURGE", JSON.stringify(settings.labels));
-    userProperties.setProperty("purge_checkFrequency_HOUR", settings.autopurge_frequency || 1);
-    userProperties.setProperty("status", settings["switch-main-autopurge"]);
+  } else if (e.parameter.savesettings) { // SET VARIABLES
+    var settings = JSON.parse(e.parameter.savesettings);
+    userProperties.setProperty("labels_to_purge", JSON.stringify(settings.labels_to_purge));
+    userProperties.setProperty("labels_never_purge", JSON.stringify(settings.labels_never_purge));
+    userProperties.setProperty("purge_checkFrequency_HOUR", settings.purge_checkFrequency_HOUR || 1);
+    userProperties.setProperty("status", settings.status);
 
-    LABELS_TO_PURGE = userProperties.getProperty("LABELS_TO_PURGE");
+    labels_to_purge = userProperties.getProperty("labels_to_purge");
+    labels_never_purge = userProperties.getProperty("labels_never_purge");
     purge_checkFrequency_HOUR = userProperties.getProperty("purge_checkFrequency_HOUR");
     status = userProperties.getProperty("status") || "disabled";
 
@@ -64,16 +63,16 @@ function doGet(e) {
     return ContentService.createTextOutput("Triggers has been disabled.");
   } else if (e.parameter.purge_getVariables) { // GET VARIABLES
     var triggers = ScriptApp.getProjectTriggers();
-    var status;
-    if (triggers.length !== 1) {
-      status = 'disabled';
-    } else {
-      status = 'enabled';
-    }
+    var status = triggers.length > 0 ? 'enabled' : 'disabled';
+    var purge_checkFrequency_HOUR = userProperties.getProperty("purge_checkFrequency_HOUR") || 1;
+    purge_checkFrequency_HOUR = parseInt(purge_checkFrequency_HOUR, 10);
+    var labels_to_purge = _JSONPARSE(userProperties.getProperty("labels_to_purge"));
+    var labels_never_purge = _JSONPARSE(userProperties.getProperty("labels_never_purge"));
     var resjson = {
-      'labels': JSON.parse(userProperties.getProperty("LABELS_TO_PURGE")) || '',
-      'purge_checkFrequency_HOUR': userProperties.getProperty("purge_checkFrequency_HOUR") || 1,
-      'status': status
+      labels_to_purge,
+      labels_never_purge,
+      purge_checkFrequency_HOUR,
+      status
     };
     return ContentService.createTextOutput(JSON.stringify(resjson));
   } else { // NO PARAMETERS
@@ -105,6 +104,16 @@ function doGet(e) {
   }
 }
 
+function _JSONPARSE(o) { // RETURNS EMPTY TXT WHEN NOT JSON
+  let ret = '';
+  try {
+    ret = JSON.parse(o);
+  } catch (e) {
+    ret = '';
+  }
+  return ret;
+}
+
 function deleteAllTriggers() {
   // DELETE ALL TRIGGERS
   var triggers = ScriptApp.getProjectTriggers();
@@ -119,12 +128,13 @@ function purgeGmail() {
   var processedLabels = 0;
 
   try {
-    var labels = userProperties.getProperty("LABELS_TO_PURGE");
-    if (labels) {
-      labels = JSON.parse(labels);
-      for (var key in labels) {
-        Logger.log("Purging [" + key + "]");
-        var deleted = labelPurge(key, labels[key]);
+    var universal_never_purge = _JSONPARSE(userProperties.getProperty("labels_never_purge"));
+    var labels_to_purge = _JSONPARSE(userProperties.getProperty("labels_to_purge"));
+    if (labels_to_purge) {
+      for (var i in labels_to_purge) {
+        var oPurge = labels_to_purge[i];
+        Logger.log("Purging [" + oPurge.purge_label + "]");
+        var deleted = labelPurge(oPurge, universal_never_purge);
         if (deleted) deletedThreads += deleted;
         processedLabels += 1;
       }
@@ -136,7 +146,39 @@ function purgeGmail() {
   }
 }
 
-function labelPurge(label, purgeafter) {
+function test() {
+  var deletedThreads = 0;
+  var processedLabels = 0;
+
+  try {
+    var all_purge = JSON.parse('{"labels_to_purge":[{"purge_label":"HOPLA Emails","older_than":"1","labels_never_purge":["ignore"],"purge_important":true,"purge_starred":false},{"purge_label":"Spam","older_than":"2","labels_never_purge":["ignore"],"purge_important":false,"purge_starred":true}],"labels_never_purge":["Auto Replies"],"purge_checkFrequency_HOUR":5,"status":"disabled"}');
+    var labels_to_purge = all_purge.labels_to_purge;
+    if (labels_to_purge && labels_to_purge.length) {
+      for (var i in labels_to_purge) {
+        var oPurge = labels_to_purge[i];
+        Logger.log("Purging [" + oPurge.purge_label + "]");
+        var deleted = labelPurge(oPurge);
+        if (deleted) deletedThreads += deleted;
+        processedLabels += 1;
+      }
+      // for (var key in labels) {
+      //   Logger.log("Purging [" + key + "]");
+      //   var deleted = labelPurge(key, labels[key]);
+      //   if (deleted) deletedThreads += deleted;
+      //   processedLabels += 1;
+      // }
+
+      return "Processed " + processedLabels + " label(s). Deleted " + deletedThreads + " thread(s).";
+    }
+  } catch (e) {
+    Logger.log(e);
+  }
+}
+
+// function labelPurge(label, purgeafter) {
+function labelPurge(oPurge, aNeverPurge) {
+  var label = oPurge.purge_label; // target label
+  var purgeafter = oPurge.older_than; // days
   if (label === "") {
     return 1;
   }
@@ -148,8 +190,26 @@ function labelPurge(label, purgeafter) {
 
   var search = "label:" + label + " before:" + purge;
 
+  if (oPurge.labels_never_purge && oPurge.labels_never_purge.length) {
+    oPurge.labels_never_purge.forEach(function (value) {
+      search += ' -label:' + value;
+    });
+  }
+
+  if (aNeverPurge && aNeverPurge.length) {
+    aNeverPurge.forEach(function (value) {
+      search += ' -label:' + value;
+    });
+  }
+
+  if (!oPurge.purge_important) search += ' -label:important';
+  if (!oPurge.purge_starred) search += ' -label:starred';
+
+  Logger.log("Your query: " + search);
+  // return;
   // This will create a simple Gmail search
   // query like label:Newsletters before:10/12/2012
+  // eslint-disable-next-line no-unreachable
   var deletedThreads = 0;
   try {
     // We are processing 100 messages in a batch to prevent script errors.
@@ -160,7 +220,7 @@ function labelPurge(label, purgeafter) {
 
     // For large batches, create another time-based trigger that will
     // activate the auto-purge process after 'n' minutes.
-
+    Logger.log("Found: " + threads.length);
     if (threads.length === 100) {
       ScriptApp.newTrigger("purgeGmail")
         .timeBased()
